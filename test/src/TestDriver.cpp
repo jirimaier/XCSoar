@@ -19,6 +19,7 @@
 #include "Device/Driver/LevilAHRS_G.hpp"
 #include "Device/Driver/Leonardo.hpp"
 #include "Device/Driver/LX.hpp"
+#include "Device/Driver/LX_Eos.hpp"
 #include "Device/Driver/LX/Internal.hpp"
 #include "Device/Driver/ILEC.hpp"
 #include "Device/Driver/IMI.hpp"
@@ -1040,6 +1041,58 @@ TestLX(const struct DeviceRegister &driver, bool condor=false)
 }
 
 static void
+TestLXEos()
+{
+  NullPort null;
+  Device *device = lx_eos_driver.CreateOnPort(dummy_config, null);
+  ok1(device != NULL);
+
+  NMEAInfo nmea_info;
+  nmea_info.Reset();
+  nmea_info.clock = TimeStamp{FloatDuration{1}};
+
+  ok1(device->ParseNMEA("$LXWP0,N,0.0,262.6,0.01,0.01,0.01,0.01,0.01,0.01,,,259,2.7*54",
+                        nmea_info));
+  ok1(nmea_info.baro_altitude_available);
+  ok1(equals(nmea_info.baro_altitude, 262.6));
+  ok1(nmea_info.airspeed_available);
+  ok1(equals(nmea_info.true_airspeed, 0.0));
+  ok1(nmea_info.total_energy_vario_available);
+  ok1(equals(nmea_info.total_energy_vario, 0.01));
+  ok1(nmea_info.external_wind_available);
+  ok1(equals(nmea_info.external_wind.norm, 2.7 / 3.6));
+  ok1(equals(nmea_info.external_wind.bearing, 259));  
+  
+  ok1(device->ParseNMEA("$LXWP1,1606,4294967295,1.90,1.00,4294967295*06", nmea_info));
+  ok1(nmea_info.device.product == "1606");
+  ok1(nmea_info.device.serial == "4294967295");
+  ok1(nmea_info.device.software_version == "1.90");
+  ok1(nmea_info.device.hardware_version == "1.00");
+
+  ok1(device->ParseNMEA("$LXWP2,2.0,1.23,0,1.58,-2.46,1.54,0*00", nmea_info));
+  ok1(nmea_info.settings.mac_cready_available);
+  ok1(equals(nmea_info.settings.mac_cready, 2.0));
+  ok1(nmea_info.settings.bugs_available);
+  ok1(equals(nmea_info.settings.bugs, 1.0));
+
+  ok1(device->ParseNMEA("$LXWP3,47.76,0,2.0,5.0,15,30,2.5,1.0,0,100,0.1,,0*08", nmea_info));
+  ok1(nmea_info.settings.qnh_available);
+  ok1(equals(nmea_info.settings.qnh.GetHectoPascal(), 1015));
+  
+  nmea_info.Reset();
+  nmea_info.clock = TimeStamp{FloatDuration{1}};
+
+  ok1(device->ParseNMEA("$LXWP0,N,,,,,,,,,,,*6d", nmea_info));
+  ok1(!nmea_info.pressure_altitude_available);
+  ok1(!nmea_info.baro_altitude_available);
+  ok1(!nmea_info.airspeed_available);
+  ok1(!nmea_info.total_energy_vario_available);
+  ok1(!nmea_info.external_wind_available);
+
+  delete device;
+}
+
+static void
 TestLXV7()
 {
   NullPort null;
@@ -1622,7 +1675,7 @@ TestFlightList(const struct DeviceRegister &driver)
 
 int main()
 {
-  plan_tests(843);
+  plan_tests(877);
 
   TestGeneric();
   TestTasman();
@@ -1639,6 +1692,7 @@ int main()
   TestLevilAHRS();
   TestLX(lx_driver);
   TestLX(condor_driver, true);
+  TestLXEos();
   TestLXV7();
   TestILEC();
   TestOpenVario();
@@ -1658,6 +1712,7 @@ int main()
   TestDeclare(ew_microrecorder_driver);
   TestDeclare(posigraph_driver);
   TestDeclare(lx_driver);
+  TestDeclare(lx_eos_driver);
   TestDeclare(imi_driver);
   TestDeclare(flarm_driver);
   //TestDeclare(vega_driver);
@@ -1667,6 +1722,7 @@ int main()
 
   TestFlightList(cai302_driver);
   TestFlightList(lx_driver);
+  TestFlightList(lx_eos_driver);
   TestFlightList(imi_driver);
 
   return exit_status();
