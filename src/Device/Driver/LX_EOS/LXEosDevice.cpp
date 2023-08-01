@@ -5,6 +5,7 @@
 #include "NMEA/Checksum.hpp"
 #include "NMEA/DeviceInfo.hpp"
 #include "NMEA/Info.hpp"
+#include "util/ByteOrder.hxx"
 
 void
 LXEosDevice::LinkTimeout()
@@ -91,4 +92,65 @@ LXEosDevice::SendNewSettings(OperationEnvironment& env)
     return true;
   } else
     return false;
+}
+
+bool
+LXEosDevice::WriteAndWaitForACK(const std::span<std::byte>& message,
+                                OperationEnvironment& env)
+{
+  port.FullFlush(
+    env, std::chrono::milliseconds(50), std::chrono::milliseconds(200));
+  port.FullWrite(message, env, std::chrono::milliseconds(1000));
+
+  try {
+    port.WaitForByte(
+      // ACK is 0x06 (NACK is 0x15)
+      std::byte{ 0x06 },
+      env,
+      std::chrono::milliseconds(3000));
+  } catch (...) {
+    return false;
+  }
+  return true;
+}
+
+void
+LXEosDevice::CopyStringSpacePadded(char dest[],
+                                   const TCHAR src[],
+                                   const uint8_t len)
+{
+  bool src_end_reached = false;
+  for (uint8_t i = 0; i < (len - 1); i++) {
+    if (!src_end_reached)
+      if (src[i] == 0)
+        src_end_reached = true;
+    dest[i] = src_end_reached ? '\x20' : src[i];
+  }
+
+  dest[len - 1] = 0;
+}
+
+uint32_t
+LXEosDevice::ConvertCoord(Angle coord)
+{
+  int32_t valueMilliMinutes = static_cast<int32_t>(coord.Degrees() * 60000.0);
+  return ToBE32(*reinterpret_cast<uint32_t*>(&valueMilliMinutes));
+}
+
+uint8_t
+LXEosDevice::CalculateCRC(std::byte* msg, const int len, const uint8_t initial)
+{
+  uint8_t result{ initial };
+
+  for (int byte = 0; byte < len; byte++) {
+    uint8_t d = static_cast<uint8_t>(msg[byte]);
+    for (int count = 8; --count >= 0; d <<= 1) {
+      uint8_t tmp = result ^ d;
+      result <<= 1;
+      if ((tmp & 0x80) != 0)
+        result ^= 0x69;
+    }
+  }
+
+  return result;
 }

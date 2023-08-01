@@ -48,6 +48,7 @@ struct RecordedFlightInfo : FlightInfo {
      * Flight number, used by the Flytec driver.
      */
     unsigned flytec;
+
   } internal;
 };
 
