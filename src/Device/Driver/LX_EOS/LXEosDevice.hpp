@@ -9,6 +9,8 @@
 #include "NMEA/DeviceInfo.hpp"
 #include "NMEA/InputLine.hpp"
 #include "thread/Mutex.hxx"
+#include "time/BrokenDate.hpp"
+#include "util/AllocatedArray.hxx"
 
 using std::string_view_literals::operator""sv;
 
@@ -87,8 +89,33 @@ struct EosClassStruct
 {
   const uint8_t syn = 0x02;
   const uint8_t cmd = 0xD0;
-  char name[9];     // Competition class
+  char name[9]; // Competition class
   uint8_t crc;
+} gcc_packed;
+
+struct EosGetNumOfFlights
+{
+  // This command has all bytes constant
+  const uint8_t syn = 0x02;
+  const uint8_t cmd = 0xF2;
+  const uint8_t crc = 0x1F;
+} gcc_packed;
+
+struct EosRequestFlightInfo
+{
+  const uint8_t syn = 0x02;
+  const uint8_t cmd = 0xF0;
+  uint8_t flight_id; // First is 1 (newest), only one byte in case of Eos
+  uint8_t crc;       // CRC
+} gcc_packed;
+
+struct EosRequestFlightBlock
+{
+  const uint8_t syn = 0x02;
+  const uint8_t cmd = 0xF1;
+  uint16_t flight_id; // Flight ID is the index (1 = newest), not the ID from FlightInfo
+  uint16_t block_id;  // First is 0
+  uint8_t crc;        // CRC
 } gcc_packed;
 
 /**
@@ -140,7 +167,9 @@ private:
    * @param initial initial value of byte (typically 0xFF, but may differ)
    * @return uint8_t CRC byte
    */
-  static uint8_t CalculateCRC(std::byte* msg, const int len, const uint8_t initial);
+  static uint8_t CalculateCRC(std::byte* msg,
+                              const int len,
+                              const uint8_t initial);
 
   /**
    * @brief Fills destination buffer of given length by characters of string
@@ -195,8 +224,7 @@ private:
    *
    * @param declaration
    * @param env
-   * @return true
-   * @return false
+   * @return true if successful
    */
   bool SendCompetitionClass(const Declaration& declaration,
                             OperationEnvironment& env);
@@ -207,10 +235,57 @@ private:
    * @param env OperationEnvironment
    * @return true if ACK was received,
    * @return false if time out or other exception occurred
-   * @note timeout is 1 second
+   * @note timeout is 3 seconds
    */
   bool WriteAndWaitForACK(const std::span<std::byte>& message,
                           OperationEnvironment& env);
+
+  /**
+   * @brief Get the Number Of Flights in logger. Maximum number that can be
+   * read is 0xFF
+   *
+   * @param flight_count output number of flights (max 0xFF)
+   * @param env
+   * @return true if successful
+   * @note(flight_count not changed on unsuccess)
+   */
+  bool GetNumberOfFlights(uint8_t& flight_count, OperationEnvironment& env);
+
+  /**
+   * @brief Get the Flight Info
+   *
+   * @param index 1 = newest, maximum is the flight count read by
+   * GetNumberOfFlights
+   * @param flight output struct
+   * @param env
+   * @return true if successful
+   */
+  bool GetFlightInfo(const uint8_t index,
+                     RecordedFlightInfo& flight,
+                     OperationEnvironment& env);
+
+  /**
+   * @brief Get the Flight Log Block
+   *
+   * @param block
+   * @param flight_id Flight ID from FlightInfo
+   * @param block_id First is 0
+   * @param env
+   * @return true if successful
+   */
+  bool GetFlightLogBlock(AllocatedArray<std::byte>& block,
+                         uint16_t flight_id,
+                         uint16_t block_id,
+                         OperationEnvironment& env);
+
+  /**
+   * @brief Convert Julian date to Day, Month, Year. Does not compute
+   * day-of-week
+   *
+   * @param julian_date
+   * @return BrokenDate
+   */
+  static BrokenDate julianToDate(uint32_t julian_date);
 
 public:
   /* virtual methods from class Device */
@@ -222,4 +297,9 @@ public:
   bool Declare(const Declaration& declaration,
                const Waypoint* home,
                OperationEnvironment& env) override;
+  bool ReadFlightList(RecordedFlightList& flight_list,
+                      OperationEnvironment& env) override;
+  bool DownloadFlight(const RecordedFlightInfo& flight,
+                      Path path,
+                      OperationEnvironment& env) override;
 };

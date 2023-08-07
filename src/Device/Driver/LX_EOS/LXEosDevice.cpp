@@ -22,7 +22,7 @@ LXEosDevice::EnableNMEA(OperationEnvironment& env)
    *
    * - LXWP0 every second (most important data)
    * - LXWP1 every 60 seconds (device info)
-   * - LXWP2 every 57 seconds (MC, Bugs, Ballast settings)
+   * - LXWP2 every 11 seconds (MC, Bugs, Ballast settings)
    * - LXWP3 every 17 seconds (only used for QNH)
    *
    * It seems that LXWP3 does not get sent if it is to be sent at the same time
